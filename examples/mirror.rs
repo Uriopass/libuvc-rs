@@ -2,19 +2,29 @@ use glium::{implement_vertex, uniform};
 
 use std::error::Error;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use glium::Surface;
-use uvc::{Context, Frame};
+use uvc::{Context, Frame, FrameFormat};
 
 fn frame_to_raw_image(
     frame: &Frame,
 ) -> Result<glium::texture::RawImage2d<'static, u8>, Box<dyn Error>> {
-    let new_frame = frame.to_rgb()?;
-    let data = new_frame.to_bytes();
+    let data = frame.to_bytes();
+    let mut rgbdata = vec![0; 3 * data.len()];
+    for i in 0..data.len() {
+        unsafe { *rgbdata.get_unchecked_mut(i * 3) = *data.get_unchecked(i); }
+        unsafe { *rgbdata.get_unchecked_mut(i * 3 + 1) = *data.get_unchecked(i); }
+        unsafe { *rgbdata.get_unchecked_mut(i * 3 + 2) = *data.get_unchecked(i); }
+    }
+
+    if data.len() != frame.width() as usize * frame.height() as usize {
+        return Err(format!("{:?}: Data length does not match frame size", SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap()).into());
+    }
 
     let image = glium::texture::RawImage2d::from_raw_rgb(
-        data.to_vec(),
-        (new_frame.width(), new_frame.height()),
+        rgbdata,
+        (frame.width(), frame.height()),
     );
 
     Ok(image)
@@ -59,18 +69,17 @@ fn main() {
 
     let devh = dev.open().expect("Could not open device");
 
-    let format = devh
-        .get_preferred_format(|x, y| {
-            if x.fps >= y.fps && x.width * x.height >= y.width * y.height {
-                x
-            } else {
-                y
+    for format in devh.supported_formats() {
+        for frame in format.supported_formats() {
+            for duration in frame.intervals_duration() {
+                println!("{} {} {:?} {:?}", frame.width(), frame.height(), frame.subtype(), 1.0 / duration.as_secs_f64());
             }
-        })
-        .unwrap();
+        }
+    }
 
-    println!("Best format found: {:?}", format);
-    let mut streamh = devh.get_stream_handle_with_format(format).unwrap();
+    let _ = devh.set_brightness(100);
+
+    let mut streamh = devh.get_stream_handle_with_format_size_and_fps(FrameFormat::GRAY8, 640, 480, 180).unwrap();
 
     println!(
             "Scanning mode: {:?}\nAuto-exposure mode: {:?}\nAuto-exposure priority: {:?}\nAbsolute exposure: {:?}\nRelative exposure: {:?}\nAboslute focus: {:?}\nRelative focus: {:?}",

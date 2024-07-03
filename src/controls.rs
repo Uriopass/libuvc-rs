@@ -54,6 +54,7 @@ impl<'a> DeviceHandle<'a> {
             if err != Error::Success {
                 return Err(err);
             }
+
             match mode.assume_init() {
                 1 => Ok(AutoExposureMode::Manual),
                 2 => Ok(AutoExposureMode::Auto),
@@ -143,6 +144,17 @@ impl<'a> DeviceHandle<'a> {
             .into();
             if err == Error::Success {
                 Ok((focus_rel.assume_init(), speed.assume_init()))
+            } else {
+                Err(err)
+            }
+        }
+    }
+
+    pub fn set_brightness(&self, brightness: i16) -> Result<()> {
+        unsafe {
+            let err = uvc_set_brightness(self.devh.as_ptr(), brightness).into();
+            if err == Error::Success {
+                Ok(())
             } else {
                 Err(err)
             }
